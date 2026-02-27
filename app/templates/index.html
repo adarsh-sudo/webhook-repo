@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GitHub Repository Activity</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'JetBrains Mono', monospace;
+            padding: 48px 40px;
+            background-color: #0d1117;
+            color: #e6edf3;
+            min-height: 100vh;
+        }
+
+        h1 {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.75rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            color: #f0f6fc;
+            margin-bottom: 6px;
+        }
+
+        .subtitle {
+            font-size: 0.75rem;
+            color: #8b949e;
+            margin-bottom: 28px;
+        }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .toolbar label {
+            font-size: 0.72rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .filter-select {
+            appearance: none;
+            background: #161b22;
+            border: 1px solid #30363d;
+            color: #e6edf3;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            padding: 7px 36px 7px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            outline: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b949e' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            transition: border-color 0.15s;
+        }
+
+        .filter-select:hover, .filter-select:focus {
+            border-color: #58a6ff;
+        }
+
+        .event {
+            background: #161b22;
+            border: 1px solid #21262d;
+            padding: 14px 18px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            font-size: 0.82rem;
+            line-height: 1.6;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            animation: fadeIn 0.25s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .event-badge {
+            font-size: 0.65rem;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 20px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            white-space: nowrap;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .badge-push    { background: #1f3a1f; color: #56d364; border: 1px solid #2ea043; }
+        .badge-pull    { background: #1a2e4a; color: #58a6ff; border: 1px solid #1f6feb; }
+        .badge-merge   { background: #2d1e3e; color: #d2a8ff; border: 1px solid #8957e5; }
+
+        .event-text { color: #c9d1d9; }
+        .event-text strong { color: #f0f6fc; }
+
+        .empty {
+            color: #484f58;
+            font-size: 0.85rem;
+            padding: 20px 0;
+        }
+
+        #event-count {
+            font-size: 0.72rem;
+            color: #8b949e;
+            margin-left: auto;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Repository Activity</h1>
+<p class="subtitle">Live feed · updates every 15s</p>
+
+<div class="toolbar">
+    <label for="filter">Filter by type</label>
+    <select id="filter" class="filter-select" onchange="renderEvents()">
+        <option value="all">All events</option>
+        <option value="push">Push</option>
+        <option value="pull_request">Pull Request</option>
+        <option value="merge">Merge</option>
+    </select>
+    <span id="event-count"></span>
+</div>
+
+<div id="events" class="empty">Loading events...</div>
+
+<script>
+let allEvents = [];
+
+function getOrdinal(day) {
+    if (day > 3 && day < 21) return day + "th";
+    switch (day % 10) {
+        case 1: return day + "st";
+        case 2: return day + "nd";
+        case 3: return day + "rd";
+        default: return day + "th";
+    }
+}
+
+function formatDateUTC(timestamp) {
+    const date = new Date(timestamp);
+    const day = getOrdinal(date.getUTCDate());
+    const month = date.toLocaleString("en-US", { month: "long", timeZone: "UTC" });
+    const year = date.getUTCFullYear();
+    const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "UTC" });
+    return `${day} ${month} ${year} · ${time} UTC`;
+}
+
+function getBadge(action) {
+    const map = {
+        push: { label: "Push", cls: "badge-push" },
+        pull_request: { label: "PR", cls: "badge-pull" },
+        merge: { label: "Merge", cls: "badge-merge" }
+    };
+    return map[action] || { label: action, cls: "" };
+}
+
+function buildText(event) {
+    const d = formatDateUTC(event.timestamp);
+    if (event.action === "push")
+        return `<strong>"${event.author}"</strong> pushed to <strong>"${event.to_branch}"</strong> on ${d}`;
+    if (event.action === "pull_request")
+        return `<strong>"${event.author}"</strong> submitted a pull request from <strong>"${event.from_branch}"</strong> to <strong>"${event.to_branch}"</strong> on ${d}`;
+    if (event.action === "merge")
+        return `<strong>"${event.author}"</strong> merged branch <strong>"${event.from_branch}"</strong> to <strong>"${event.to_branch}"</strong> on ${d}`;
+    return JSON.stringify(event);
+}
+
+function renderEvents() {
+    const filter = document.getElementById("filter").value;
+    const container = document.getElementById("events");
+    const countEl = document.getElementById("event-count");
+
+    const filtered = filter === "all" ? allEvents : allEvents.filter(e => e.action === filter);
+
+    container.innerHTML = "";
+
+    if (filtered.length === 0) {
+        container.innerHTML = "<p class='empty'>No events match this filter.</p>";
+        countEl.textContent = "";
+        return;
+    }
+
+    countEl.textContent = `${filtered.length} event${filtered.length !== 1 ? "s" : ""}`;
+
+    filtered.forEach(event => {
+        const badge = getBadge(event.action);
+        const div = document.createElement("div");
+        div.className = "event";
+        div.innerHTML = `
+            <span class="event-badge ${badge.cls}">${badge.label}</span>
+            <span class="event-text">${buildText(event)}</span>
+        `;
+        container.appendChild(div);
+    });
+}
+
+function fetchEvents() {
+    fetch("/events")
+        .then(r => r.json())
+        .then(data => {
+            allEvents = data;
+            renderEvents();
+        })
+        .catch(err => {
+            console.error("Error fetching events:", err);
+            if (allEvents.length === 0) {
+                document.getElementById("events").innerHTML = "<p class='empty'>Failed to load events.</p>";
+            }
+        });
+}
+
+fetchEvents();
+setInterval(fetchEvents, 15000);
+</script>
+
+</body>
+</html>
