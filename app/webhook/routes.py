@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, render_template
 from datetime import datetime, timezone
 from app.extensions import mongo
+from dateutil import parser
 
 webhook = Blueprint('webhook', __name__)
 
@@ -27,7 +28,7 @@ def receiver():
             "action": "push",
             "from_branch": None,
             "to_branch": data["ref"].split("/")[-1],
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc)
         }
 
     elif event_type == "pull_request":
@@ -40,7 +41,7 @@ def receiver():
                 "action": "merge",
                 "from_branch": pr["head"]["ref"],
                 "to_branch": pr["base"]["ref"],
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.now(timezone.utc)
             }
         else:
             document = {
@@ -49,7 +50,7 @@ def receiver():
                 "action": "pull_request",
                 "from_branch": pr["head"]["ref"],
                 "to_branch": pr["base"]["ref"],
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.now(timezone.utc)
             }
 
     else:
@@ -59,10 +60,32 @@ def receiver():
 
     return jsonify({"message": "Webhook received"}), 200
 
-
+# Endpoint to retrieve events, with filtering by timestamp (since) after 1st request
 @webhook.route('/events', methods=["GET"])
 def get_events():
-    events = list(mongo.db.events.find({}, {"_id": 0}).sort("timestamp", -1).limit(100))
+    since = request.args.get("since")
+
+    query = {}
+
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since.replace("Z", ""))
+            query = {"timestamp": {"$gt": since_dt}}
+
+        except Exception as e:
+            print("PARSE ERROR:", e)
+
+    events_cursor = (
+        mongo.db.events
+        .find(query, {"_id": 0})
+        .sort("timestamp", -1)
+        .limit(100)
+    )
+
+    events = []
+    for event in events_cursor:
+        event["timestamp"] = event["timestamp"].isoformat() + "Z"
+        events.append(event)
     return jsonify(events)
 
 # Simple home page for displaying the events in a interactive UI(index.html)

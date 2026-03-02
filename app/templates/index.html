@@ -135,6 +135,7 @@
 
 <script>
 let allEvents = [];
+let lastTimestamp = null;
 
 function getOrdinal(day) {
     if (day > 3 && day < 21) return day + "th";
@@ -185,7 +186,11 @@ function renderEvents() {
     container.innerHTML = "";
 
     if (filtered.length === 0) {
-        container.innerHTML = "<p class='empty'>No events match this filter.</p>";
+       container.innerHTML = `
+    <p class='empty'>
+        No new events after <strong>${formatDateUTC(lastTimestamp)}</strong>.
+    </p>
+`;
         countEl.textContent = "";
         return;
     }
@@ -203,19 +208,41 @@ function renderEvents() {
         container.appendChild(div);
     });
 }
-
 function fetchEvents() {
-    fetch("/events")
+    let url = "/events";
+
+    if (lastTimestamp) {
+        url += `?since=${encodeURIComponent(lastTimestamp)}`;
+    }
+
+    fetch(url)
         .then(r => r.json())
         .then(data => {
-            allEvents = data;
+
+            // FIRST LOAD
+            if (!lastTimestamp) {
+                allEvents = data;
+
+                if (data.length > 0) {
+                    lastTimestamp = data[0].timestamp;
+                }
+
+                renderEvents();
+                return;
+            }
+
+            // AFTER FIRST LOAD → show only new data
+            if (data.length > 0) {
+                lastTimestamp = data[0].timestamp;
+                allEvents = data;   // replace with only new events
+            } else {
+                allEvents = [];    // clear if no new events
+            }
+
             renderEvents();
         })
         .catch(err => {
             console.error("Error fetching events:", err);
-            if (allEvents.length === 0) {
-                document.getElementById("events").innerHTML = "<p class='empty'>Failed to load events.</p>";
-            }
         });
 }
 
